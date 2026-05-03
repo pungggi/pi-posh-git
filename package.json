@@ -1,0 +1,9 @@
+{
+  "name": "pi-posh-git",
+  "version": "1.0.0",
+  "description": "posh-git style persistent git status widget for pi",
+  "main": "src/index.ts",
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  }
+}
