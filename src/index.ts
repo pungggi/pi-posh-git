@@ -8,6 +8,7 @@
  */
 
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
+import type { ReadonlyFooterDataProvider } from "@mariozechner/pi-coding-agent";
 import { execFile } from "node:child_process";
 
 // ── git helpers ──────────────────────────────────────────────────────
@@ -183,6 +184,191 @@ function buildPrompt(status: GitStatus, th: Theme): string {
 	return p.join("");
 }
 
+// ── minimal string-width helpers (ANSI-aware) ──────────────────────
+
+const SGR_RE = /\x1b\[[0-9;]*m/g;
+
+/** Visible width of a string that may contain SGR escape sequences. */
+function visibleWidth(s: string): number {
+	return s.replace(SGR_RE, "").length;
+}
+
+/**
+ * Truncate a possibly-colored string to `maxWidth` visible columns.
+ * Appends `ellipsis` ("..." default) if truncated, preserving any trailing SGR.
+ */
+function truncateToWidth(s: string, maxWidth: number, ellipsis: string = "..."): string {
+	const bare = s.replace(SGR_RE, "");
+	if (bare.length <= maxWidth) return s;
+	const ellipsisVis = ellipsis.replace(SGR_RE, "").length;
+	const target = Math.max(0, maxWidth - ellipsisVis);
+	// Walk the original string, counting only non-SGR chars
+	let vis = 0;
+	let i = 0;
+	let lastContentIdx = 0;
+	for (; i < s.length; i++) {
+		if (s[i] === "\x1b") {
+			// skip SGR sequence
+			const semi = s.indexOf("m", i);
+			if (semi !== -1) { i = semi; continue; }
+		}
+		if (vis >= target) break;
+		vis++;
+		lastContentIdx = i + 1;
+	}
+	return s.slice(0, lastContentIdx) + ellipsis;
+}
+
+// ── footer (default minus git branch) ────────────────────────────────
+
+function formatTokens(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10_000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1_000_000) return `${Math.round(count / 1000)}k`;
+	if (count < 10_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+	return `${Math.round(count / 1_000_000)}M`;
+}
+
+function sanitizeStatusText(text: string): string {
+	return text.replace(/[\r\n\t]/g, " ").replace(/ +/g, " ").trim();
+}
+
+/**
+ * Build a footer that mirrors pi's built-in footer but omits the git branch
+ * from the pwd line (since pi-posh-git shows it in the widget below).
+ */
+function createNoBranchFooter(
+	ctx: {
+		sessionManager: any; model: any; cwd: string;
+		getContextUsage: () => { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
+	},
+	th: Theme,
+	footerData: ReadonlyFooterDataProvider,
+	tui: { requestRender: () => void },
+	getThinkingLevel: () => string,
+) {
+	const unsub = footerData.onBranchChange(() => tui.requestRender());
+
+	return {
+		dispose: unsub,
+		invalidate() {},
+		render(width: number): string[] {
+			// ── pwd line (no branch) ──
+			let pwd = ctx.sessionManager.getCwd();
+			const home = process.env.HOME || process.env.USERPROFILE;
+			if (home && pwd.startsWith(home)) {
+				pwd = `~${pwd.slice(home.length)}`;
+			}
+			// Append session name if set
+			const sessionName = ctx.sessionManager.getSessionName?.();
+			if (sessionName) {
+				pwd = `${pwd} • ${sessionName}`;
+			}
+
+			// ── token stats ──
+			let totalInput = 0, totalOutput = 0;
+			let totalCacheRead = 0, totalCacheWrite = 0, totalCost = 0;
+			for (const entry of ctx.sessionManager.getEntries()) {
+				if (entry.type === "message" && entry.message.role === "assistant") {
+					const u = (entry.message as any).usage;
+					totalInput += u.input;
+					totalOutput += u.output;
+					totalCacheRead += u.cacheRead;
+					totalCacheWrite += u.cacheWrite;
+					totalCost += u.cost.total;
+				}
+			}
+
+			// ── context usage ──
+			const contextUsage = ctx.getContextUsage();
+			const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+			const contextPercentValue = contextUsage?.percent ?? 0;
+			const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
+
+			// ── build stats line ──
+			const statsParts: string[] = [];
+			if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
+			if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
+			if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
+			if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
+			if (totalCost) statsParts.push(`$${totalCost.toFixed(3)}`);
+
+			// colorize context %
+			const contextPercentDisplay = contextPercent === "?"
+				? `?/${formatTokens(contextWindow)}`
+				: `${contextPercent}%/${formatTokens(contextWindow)}`;
+			let contextPercentStr: string;
+			if (contextPercentValue > 90) {
+				contextPercentStr = th.fg("error", contextPercentDisplay);
+			} else if (contextPercentValue > 70) {
+				contextPercentStr = th.fg("warning", contextPercentDisplay);
+			} else {
+				contextPercentStr = contextPercentDisplay;
+			}
+			statsParts.push(contextPercentStr);
+
+			let statsLeft = statsParts.join(" ");
+
+			// ── model + thinking on the right ──
+			const modelName = ctx.model?.id || "no-model";
+			let rightSide = modelName;
+			if (ctx.model?.reasoning) {
+				const thinkingLevel = getThinkingLevel() || "off";
+				rightSide = thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+			}
+
+			// provider prefix when multiple providers
+			if (footerData.getAvailableProviderCount() > 1 && ctx.model) {
+				const withProvider = `(${ctx.model.provider}) ${rightSide}`;
+				if (visibleWidth(statsLeft) + 2 + visibleWidth(withProvider) <= width) {
+					rightSide = withProvider;
+				}
+			}
+
+			let statsLeftWidth = visibleWidth(statsLeft);
+			if (statsLeftWidth > width) {
+				statsLeft = truncateToWidth(statsLeft, width, "...");
+				statsLeftWidth = visibleWidth(statsLeft);
+			}
+
+			const rightSideWidth = visibleWidth(rightSide);
+			const totalNeeded = statsLeftWidth + 2 + rightSideWidth;
+			let statsLine: string;
+			if (totalNeeded <= width) {
+				const padding = " ".repeat(width - statsLeftWidth - rightSideWidth);
+				statsLine = statsLeft + padding + rightSide;
+			} else {
+				const availableForRight = width - statsLeftWidth - 2;
+				if (availableForRight > 0) {
+					const truncatedRight = truncateToWidth(rightSide, availableForRight, "");
+					const padding = " ".repeat(Math.max(0, width - statsLeftWidth - visibleWidth(truncatedRight)));
+					statsLine = statsLeft + padding + truncatedRight;
+				} else {
+					statsLine = statsLeft;
+				}
+			}
+
+			const dimStatsLeft = th.fg("dim", statsLeft);
+			const remainder = statsLine.slice(statsLeft.length);
+			const dimRemainder = th.fg("dim", remainder);
+			const pwdLine = truncateToWidth(th.fg("dim", pwd), width, th.fg("dim", "..."));
+			const lines = [pwdLine, dimStatsLeft + dimRemainder];
+
+			// extension statuses
+			const extensionStatuses = footerData.getExtensionStatuses();
+			if (extensionStatuses.size > 0) {
+				const sortedStatuses = Array.from(extensionStatuses.entries())
+					.sort(([a], [b]) => a.localeCompare(b))
+					.map(([, text]) => sanitizeStatusText(text));
+				const statusLine = sortedStatuses.join(" ");
+				lines.push(truncateToWidth(statusLine, width, th.fg("dim", "...")));
+			}
+
+			return lines;
+		},
+	};
+}
+
 // ── extension ────────────────────────────────────────────────────────
 
 const WIDGET_ID = "posh-git";
@@ -211,8 +397,12 @@ export default function (pi: ExtensionAPI) {
 		}, 150);
 	}
 
-	// Initial display on session start
+	// Initial display on session start — set custom footer + widget
 	pi.on("session_start", async (_event, ctx) => {
+		// Replace built-in footer with one that omits the git branch
+		ctx.ui.setFooter((tui, th, footerData) =>
+			createNoBranchFooter(ctx as any, th, footerData, tui, () => pi.getThinkingLevel()),
+		);
 		scheduleRefresh(ctx);
 	});
 
@@ -226,12 +416,13 @@ export default function (pi: ExtensionAPI) {
 		scheduleRefresh(ctx);
 	});
 
-	// Clean up on shutdown
+	// Restore built-in footer and clear widget on shutdown
 	pi.on("session_shutdown", async (_event, ctx) => {
 		if (refreshTimer) {
 			clearTimeout(refreshTimer);
 			refreshTimer = null;
 		}
 		ctx.ui.setWidget(WIDGET_ID, undefined);
+		ctx.ui.setFooter(undefined);
 	});
 }
