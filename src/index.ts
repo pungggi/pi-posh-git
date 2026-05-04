@@ -1,8 +1,8 @@
 /**
- * pi-posh-git — posh-git style git status, always visible as a widget
+ * pi-posh-git — posh-git style git status, always visible in the footer
  *
- * Displays a persistent posh-git prompt line below the editor, e.g.:
- *   ~/projects/app [main ↓2 ↑3 +1 ~0 -0 | +0 ~2 -0 !]>
+ * Displays a persistent posh-git status on the right side of the pwd line, e.g.:
+ *   ~/projects/app [main ↓2 ↑3 +1 ~0 -0 | +0 ~2 -0 !]
  *
  * Auto-refreshes on session start and after every tool execution.
  */
@@ -177,9 +177,8 @@ function buildPrompt(status: GitStatus, th: Theme): string {
 		p.push(" " + th.fg("warning", `(${status.stashCount})`));
 	}
 
-	// ] >
+	// ]
 	p.push(th.fg("warning", "]"));
-	p.push(th.fg("accent", ">"));
 
 	return p.join("");
 }
@@ -219,6 +218,11 @@ function truncateToWidth(s: string, maxWidth: number, ellipsis: string = "..."):
 	return s.slice(0, lastContentIdx) + ellipsis;
 }
 
+// ── shared state between git refresh and footer render ─────────────
+
+let currentGitPrompt = "";
+let requestFooterRender: (() => void) | null = null;
+
 // ── footer (default minus git branch) ────────────────────────────────
 
 function formatTokens(count: number): string {
@@ -235,7 +239,7 @@ function sanitizeStatusText(text: string): string {
 
 /**
  * Build a footer that mirrors pi's built-in footer but omits the git branch
- * from the pwd line (since pi-posh-git shows it in the widget below).
+ * from the pwd line (since pi-posh-git shows it on the right side of pwd).
  */
 function createNoBranchFooter(
 	ctx: {
@@ -247,6 +251,7 @@ function createNoBranchFooter(
 	tui: { requestRender: () => void },
 	getThinkingLevel: () => string,
 ) {
+	requestFooterRender = () => tui.requestRender();
 	const unsub = footerData.onBranchChange(() => tui.requestRender());
 
 	return {
@@ -351,7 +356,29 @@ function createNoBranchFooter(
 			const dimStatsLeft = th.fg("dim", statsLeft);
 			const remainder = statsLine.slice(statsLeft.length);
 			const dimRemainder = th.fg("dim", remainder);
-			const pwdLine = truncateToWidth(th.fg("dim", pwd), width, th.fg("dim", "..."));
+
+			// ── pwd line with git prompt on the right ──
+			const gitPromptWidth = visibleWidth(currentGitPrompt);
+			let pwdLine: string;
+			if (gitPromptWidth === 0) {
+				pwdLine = truncateToWidth(th.fg("dim", pwd), width, th.fg("dim", "..."));
+			} else {
+				const pwdWidth = visibleWidth(pwd);
+				const totalNeeded = pwdWidth + 1 + gitPromptWidth;
+				if (totalNeeded <= width) {
+					const padding = " ".repeat(width - pwdWidth - gitPromptWidth);
+					pwdLine = th.fg("dim", pwd) + padding + currentGitPrompt;
+				} else {
+					const available = width - gitPromptWidth - 1;
+					if (available > 0) {
+						const truncatedPwd = truncateToWidth(pwd, available, "...");
+						pwdLine = th.fg("dim", truncatedPwd) + " " + currentGitPrompt;
+					} else {
+						pwdLine = truncateToWidth(th.fg("dim", pwd), width, th.fg("dim", "..."));
+					}
+				}
+			}
+
 			const lines = [pwdLine, dimStatsLeft + dimRemainder];
 
 			// extension statuses
@@ -371,8 +398,6 @@ function createNoBranchFooter(
 
 // ── extension ────────────────────────────────────────────────────────
 
-const WIDGET_ID = "posh-git";
-
 export default function (pi: ExtensionAPI) {
 	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -386,18 +411,18 @@ export default function (pi: ExtensionAPI) {
 			try {
 				const status = await getGitStatus(ctx.cwd);
 				if (!status) {
-					ctx.ui.setWidget(WIDGET_ID, undefined);
-					return;
+					currentGitPrompt = "";
+				} else {
+					currentGitPrompt = buildPrompt(status, ctx.ui.theme);
 				}
-				const line = buildPrompt(status, ctx.ui.theme);
-				ctx.ui.setWidget(WIDGET_ID, [line], { placement: "belowEditor" });
 			} catch {
-				ctx.ui.setWidget(WIDGET_ID, undefined);
+				currentGitPrompt = "";
 			}
+			requestFooterRender?.();
 		}, 150);
 	}
 
-	// Initial display on session start — set custom footer + widget
+	// Initial display on session start — set custom footer
 	pi.on("session_start", async (_event, ctx) => {
 		// Replace built-in footer with one that omits the git branch
 		ctx.ui.setFooter((tui, th, footerData) =>
@@ -416,13 +441,14 @@ export default function (pi: ExtensionAPI) {
 		scheduleRefresh(ctx);
 	});
 
-	// Restore built-in footer and clear widget on shutdown
+	// Restore built-in footer on shutdown
 	pi.on("session_shutdown", async (_event, ctx) => {
 		if (refreshTimer) {
 			clearTimeout(refreshTimer);
 			refreshTimer = null;
 		}
-		ctx.ui.setWidget(WIDGET_ID, undefined);
+		currentGitPrompt = "";
+		requestFooterRender = null;
 		ctx.ui.setFooter(undefined);
 	});
 }

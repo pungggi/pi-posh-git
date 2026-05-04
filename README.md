@@ -1,8 +1,8 @@
 # pi-posh-git
 
-A **posh-git** style persistent git status widget for [pi](https://pi.dev).
+A **posh-git** style persistent git status footer for [pi](https://pi.dev).
 
-Displays branch, ahead/behind, staged/unstaged counts, and stash count — always visible as a widget line below the editor. Replaces pi's built-in footer branch display to avoid duplication. No commands needed.
+Displays branch, ahead/behind, staged/unstaged counts, and stash count — always visible on the right side of the pwd line in the footer. Replaces pi's built-in footer branch display to avoid duplication. No commands needed.
 
 ## Install
 
@@ -20,10 +20,10 @@ Or add manually to your pi `settings.json`:
 
 ## What it looks like
 
-A persistent widget line below the input editor:
+Git status appears on the right side of the pwd line in the footer:
 
 ```
-~/projects/app [main ↑3 +1 ~0 -0 | +0 ~2 -0 !]>
+~/projects/app [main ↑3 +1 ~0 -0 | +0 ~2 -0 !]
 ```
 
 | Element | Symbol | Meaning |
@@ -47,7 +47,7 @@ Auto-refreshes on session start and after every tool execution.
 
 ### Footer integration
 
-The extension replaces pi's built-in footer with a custom one that shows the same information (pwd, token stats, context usage, model name) **but omits the git branch from the pwd line**, since the posh-git widget already displays it below the editor. The built-in footer is automatically restored when the session shuts down.
+The extension replaces pi's built-in footer with a custom one that shows the same information (pwd, token stats, context usage, model name) **with the git status appended to the right side of the pwd line**. The built-in footer is automatically restored when the session shuts down.
 
 ## Requirements
 
