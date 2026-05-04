@@ -1,8 +1,39 @@
 {
   "name": "pi-posh-git",
-  "version": "1.0.0",
-  "description": "posh-git style persistent git status widget for pi",
+  "version": "1.0.1",
+  "description": "posh-git style persistent git status widget for pi. Displays branch, ahead/behind, staged/unstaged counts, and stash count — always visible below the editor.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi.dev",
+    "pi-extension",
+    "git",
+    "posh-git",
+    "status",
+    "widget"
+  ],
+  "license": "MIT",
+  "type": "module",
   "main": "src/index.ts",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pungggi/pi-posh-git.git"
+  },
+  "homepage": "https://github.com/pungggi/pi-posh-git#readme",
+  "bugs": {
+    "url": "https://github.com/pungggi/pi-posh-git/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
   "pi": {
     "extensions": ["./src/index.ts"]
   }

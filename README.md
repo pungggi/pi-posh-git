@@ -1,20 +1,22 @@
 # pi-posh-git
 
-A [pi](https://github.com/badlogic/pi-mono) extension that shows a persistent **posh-git** style git status line below the editor.
+A **posh-git** style persistent git status widget for [pi](https://pi.dev).
 
-No commands needed — it's always there, just like posh-git in PowerShell.
+Displays branch, ahead/behind, staged/unstaged counts, and stash count — always visible as a widget line below the editor. No commands needed.
 
 ## Install
 
-Add to your pi `settings.json`:
+```bash
+pi install npm:pi-posh-git
+```
+
+Or add manually to your pi `settings.json`:
 
 ```json
 {
-  "extensions": ["./path/to/pi-posh-git"]
+  "packages": ["npm:pi-posh-git"]
 }
 ```
-
-Or copy/symlink into `~/.pi/agent/extensions/`.
 
 ## What it looks like
 
@@ -31,7 +33,7 @@ A persistent widget line below the input editor:
 | **Identical** | `≡` | Up to date with remote |
 | **Ahead** | `↑3` | 3 commits ahead |
 | **Behind** | `↓2` | 2 commits behind |
-| **Diverged** | `↕2↑3` | Behind & ahead |
+| **Diverged** | `↓2 ↑3` | Behind & ahead |
 | **Gone** | `×` | Upstream deleted |
 | **Staged** | `+1 ~2 -0` | Green (index changes) |
 | **Delimiter** | `\|` | Yellow separator |
@@ -42,3 +44,13 @@ A persistent widget line below the input editor:
 | **Stash** | `(3)` | Stash count |
 
 Auto-refreshes on session start and after every tool execution.
+
+## Requirements
+
+- [pi](https://pi.dev) coding agent
+- Git installed and available in `PATH`
+- Node.js ≥ 20
+
+## License
+
+MIT

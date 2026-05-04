@@ -116,21 +116,14 @@ async function getGitStatus(cwd: string): Promise<GitStatus | null> {
 
 // ── posh-git prompt builder (theme-colored) ──────────────────────────
 
-function buildPrompt(status: GitStatus, cwd: string, th: Theme): string {
+function buildPrompt(status: GitStatus, th: Theme): string {
 	const hasIndex =
 		status.indexAdded > 0 || status.indexModified > 0 || status.indexDeleted > 0;
 	const hasWorking =
 		status.workingAdded > 0 || status.workingModified > 0 ||
 		status.workingDeleted > 0 || status.hasUnmerged;
 
-	// Abbreviate path
-	const home = process.env.HOME || process.env.USERPROFILE || "";
-	const displayPath = home && cwd.startsWith(home) ? "~" + cwd.slice(home.length) : cwd;
-
 	const p: string[] = [];
-
-	// Path
-	p.push(th.fg("text", displayPath) + " ");
 
 	// [
 	p.push(th.fg("warning", "["));
@@ -210,7 +203,7 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.setWidget(WIDGET_ID, undefined);
 					return;
 				}
-				const line = buildPrompt(status, ctx.cwd, ctx.ui.theme);
+				const line = buildPrompt(status, ctx.ui.theme);
 				ctx.ui.setWidget(WIDGET_ID, [line], { placement: "belowEditor" });
 			} catch {
 				ctx.ui.setWidget(WIDGET_ID, undefined);
