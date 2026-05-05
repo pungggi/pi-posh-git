@@ -38,7 +38,7 @@ Git status appears on the right side of the pwd line in the footer:
 | **Staged** | `+1 ~2 -0` | Green (index changes) |
 | **Delimiter** | `\|` | Yellow separator |
 | **Unstaged** | `+0 ~1 -0` | Red (working tree) |
-| **Clean** | `≡` | Green |
+| **Clean** | *(none)* | No local-status symbol when working tree and index are clean |
 | **Staged only** | `~` | Cyan |
 | **Dirty** | `!` | Red |
 | **Stash** | `(3)` | Stash count |

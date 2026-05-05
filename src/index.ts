@@ -22,10 +22,11 @@ interface GitStatus {
 	indexAdded: number;
 	indexModified: number;
 	indexDeleted: number;
+	indexUnmerged: number;
 	workingAdded: number;
 	workingModified: number;
 	workingDeleted: number;
-	hasUnmerged: boolean;
+	workingUnmerged: number;
 	stashCount: number;
 }
 
@@ -59,10 +60,11 @@ async function getGitStatus(cwd: string): Promise<GitStatus | null> {
 	let indexAdded = 0;
 	let indexModified = 0;
 	let indexDeleted = 0;
+	let indexUnmerged = 0;
 	let workingAdded = 0;
 	let workingModified = 0;
 	let workingDeleted = 0;
-	let hasUnmerged = false;
+	let workingUnmerged = 0;
 
 	for (const line of lines) {
 		if (line.startsWith("# branch.head ")) {
@@ -84,15 +86,24 @@ async function getGitStatus(cwd: string): Promise<GitStatus | null> {
 			else if (x === "M") indexModified++;
 			else if (x === "D") indexDeleted++;
 			else if (x === "R" || x === "C") indexModified++;
-			else if (x === "U") hasUnmerged = true;
+			else if (x === "U") indexUnmerged++;
 			if (y === "A" || y === "?") workingAdded++;
 			else if (y === "M") workingModified++;
 			else if (y === "D") workingDeleted++;
-			else if (y === "U") hasUnmerged = true;
+			else if (y === "U") workingUnmerged++;
 		} else if (line.startsWith("? ")) {
 			workingAdded++;
 		} else if (line.startsWith("u ")) {
-			hasUnmerged = true;
+			const x = line.charAt(2);
+			const y = line.charAt(3);
+			if (x === "A") indexAdded++;
+			else if (x === "M") indexModified++;
+			else if (x === "D") indexDeleted++;
+			else if (x === "U") indexUnmerged++;
+			if (y === "A") workingAdded++;
+			else if (y === "M") workingModified++;
+			else if (y === "D") workingDeleted++;
+			else if (y === "U") workingUnmerged++;
 		}
 	}
 
@@ -109,9 +120,9 @@ async function getGitStatus(cwd: string): Promise<GitStatus | null> {
 
 	return {
 		branch, upstream, aheadBy, behindBy, upstreamGone,
-		indexAdded, indexModified, indexDeleted,
-		workingAdded, workingModified, workingDeleted,
-		hasUnmerged, stashCount,
+		indexAdded, indexModified, indexDeleted, indexUnmerged,
+		workingAdded, workingModified, workingDeleted, workingUnmerged,
+		stashCount,
 	};
 }
 
@@ -119,10 +130,11 @@ async function getGitStatus(cwd: string): Promise<GitStatus | null> {
 
 function buildPrompt(status: GitStatus, th: Theme): string {
 	const hasIndex =
-		status.indexAdded > 0 || status.indexModified > 0 || status.indexDeleted > 0;
+		status.indexAdded > 0 || status.indexModified > 0 ||
+		status.indexDeleted > 0 || status.indexUnmerged > 0;
 	const hasWorking =
 		status.workingAdded > 0 || status.workingModified > 0 ||
-		status.workingDeleted > 0 || status.hasUnmerged;
+		status.workingDeleted > 0 || status.workingUnmerged > 0;
 
 	const p: string[] = [];
 
@@ -148,8 +160,9 @@ function buildPrompt(status: GitStatus, th: Theme): string {
 
 	// Index (staged, green) — only when there are actually staged files
 	if (hasIndex) {
-		p.push(" " + th.fg("success",
-			`+${status.indexAdded} ~${status.indexModified} -${status.indexDeleted}`));
+		let indexText = `+${status.indexAdded} ~${status.indexModified} -${status.indexDeleted}`;
+		if (status.indexUnmerged > 0) indexText += ` !${status.indexUnmerged}`;
+		p.push(" " + th.fg("success", indexText));
 	}
 
 	// | delimiter — only when both sides have content
@@ -159,17 +172,16 @@ function buildPrompt(status: GitStatus, th: Theme): string {
 
 	// Working (red) — only when there are actually unstaged files
 	if (hasWorking) {
-		p.push(" " + th.fg("error",
-			`+${status.workingAdded} ~${status.workingModified} -${status.workingDeleted}`));
+		let workingText = `+${status.workingAdded} ~${status.workingModified} -${status.workingDeleted}`;
+		if (status.workingUnmerged > 0) workingText += ` !${status.workingUnmerged}`;
+		p.push(" " + th.fg("error", workingText));
 	}
 
-	// Local status
+	// Local status (posh-git default LocalDefaultStatusSymbol is empty)
 	if (hasWorking) {
 		p.push(" " + th.fg("error", "!"));
 	} else if (hasIndex) {
 		p.push(" " + th.fg("accent", "~"));
-	} else {
-		p.push(" " + th.fg("success", "≡"));
 	}
 
 	// Stash
