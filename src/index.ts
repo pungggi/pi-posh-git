@@ -7,8 +7,8 @@
  * Auto-refreshes on session start and after every tool execution.
  */
 
-import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
-import type { ReadonlyFooterDataProvider } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ReadonlyFooterDataProvider } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
 
 // ── git helpers ──────────────────────────────────────────────────────

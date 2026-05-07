@@ -1,6 +1,6 @@
 {
   "name": "pi-posh-git",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "description": "posh-git style persistent git status for pi. Displays branch, ahead/behind, staged/unstaged counts, and stash count — always visible in the footer.",
   "keywords": [
     "pi-package",
@@ -32,7 +32,7 @@
     "node": ">=20.0.0"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": ">=0.74.0"
   },
   "pi": {
     "extensions": [
