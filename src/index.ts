@@ -412,25 +412,34 @@ function createNoBranchFooter(
 
 export default function (pi: ExtensionAPI) {
 	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	/** Latest ctx captured from any event — used by the periodic poller. */
+	let lastCtx: { cwd: string; hasUI: boolean; ui: any } | null = null;
+
+	async function doRefresh(ctx: { cwd: string; hasUI: boolean; ui: any }) {
+		if (!ctx.hasUI) return;
+		try {
+			const status = await getGitStatus(ctx.cwd);
+			if (!status) {
+				currentGitPrompt = "";
+			} else {
+				currentGitPrompt = buildPrompt(status, ctx.ui.theme);
+			}
+		} catch {
+			currentGitPrompt = "";
+		}
+		requestFooterRender?.();
+	}
 
 	function scheduleRefresh(ctx: { cwd: string; hasUI: boolean; ui: any }) {
 		if (!ctx.hasUI) return;
+		lastCtx = ctx;
 
 		if (refreshTimer) clearTimeout(refreshTimer);
 
 		refreshTimer = setTimeout(async () => {
 			refreshTimer = null;
-			try {
-				const status = await getGitStatus(ctx.cwd);
-				if (!status) {
-					currentGitPrompt = "";
-				} else {
-					currentGitPrompt = buildPrompt(status, ctx.ui.theme);
-				}
-			} catch {
-				currentGitPrompt = "";
-			}
-			requestFooterRender?.();
+			doRefresh(ctx);
 		}, 150);
 	}
 
@@ -441,6 +450,12 @@ export default function (pi: ExtensionAPI) {
 			createNoBranchFooter(ctx as any, th, footerData, tui, () => pi.getThinkingLevel()),
 		);
 		scheduleRefresh(ctx);
+
+		// Periodic poll: refresh git status every 50 s even when idle
+		if (pollTimer) clearInterval(pollTimer);
+		pollTimer = setInterval(() => {
+			if (lastCtx) doRefresh(lastCtx);
+		}, 50_000);
 	});
 
 	// Refresh after any tool finishes (files may have changed)
@@ -459,6 +474,11 @@ export default function (pi: ExtensionAPI) {
 			clearTimeout(refreshTimer);
 			refreshTimer = null;
 		}
+		if (pollTimer) {
+			clearInterval(pollTimer);
+		pollTimer = null;
+		}
+		lastCtx = null;
 		currentGitPrompt = "";
 		requestFooterRender = null;
 		ctx.ui.setFooter(undefined);
