@@ -2,6 +2,8 @@
 
 A **posh-git** style persistent git status footer for [pi](https://pi.dev).
 
+Inspired by [dahlbyk/posh-git](https://github.com/dahlbyk/posh-git) — the excellent PowerShell module that pioneered rich git status in the prompt.
+
 Displays branch, ahead/behind, staged/unstaged counts, and stash count — always visible on the right side of the pwd line in the footer. Replaces pi's built-in footer branch display to avoid duplication. No commands needed.
 
 ## Install
