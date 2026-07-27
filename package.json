@@ -17,6 +17,7 @@
   "main": "src/index.ts",
   "files": [
     "src",
+    "docs",
     "README.md",
     "LICENSE"
   ],
@@ -39,5 +40,12 @@
       "./src/index.ts"
     ],
     "image": "https://raw.githubusercontent.com/pungggi/pi-posh-git/master/screenshot.png"
+  },
+  "scripts": {
+    "prepublishOnly": "node -e \"if(!process.env.CI)throw new Error('publish via release.yml CI: push a v* tag. Manual npm publish is blocked.')\""
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
