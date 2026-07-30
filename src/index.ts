@@ -1,130 +1,19 @@
 /**
- * pi-posh-git — posh-git style git status, always visible in the footer
+ * pi-posh-git — posh-git style git status, always visible in the footer,
+ * plus a note + git context feed into the agent (src/note/).
  *
  * Displays a persistent posh-git status on the right side of the pwd line, e.g.:
  *   ~/projects/app [main ↓2 ↑3 +1 ~0 -0 | +0 ~2 -0 !]
  *
- * Auto-refreshes on session start and after every tool execution.
+ * The same git status is also fed to the LLM as a plain-text line alongside a
+ * timestamped note (see registerNote). Auto-refreshes on session start and
+ * after every tool execution.
  */
 
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import type { ReadonlyFooterDataProvider } from "@earendil-works/pi-coding-agent";
-import { execFile } from "node:child_process";
-
-// ── git helpers ──────────────────────────────────────────────────────
-
-interface GitStatus {
-	branch: string;
-	upstream: string | null;
-	aheadBy: number;
-	behindBy: number;
-	upstreamGone: boolean;
-	indexAdded: number;
-	indexModified: number;
-	indexDeleted: number;
-	indexUnmerged: number;
-	workingAdded: number;
-	workingModified: number;
-	workingDeleted: number;
-	workingUnmerged: number;
-	stashCount: number;
-}
-
-function runGit(cwd: string, args: string[]): Promise<string | null> {
-	return new Promise((resolve) => {
-		execFile(
-			"git",
-			["--no-optional-locks", ...args],
-			{ cwd, timeout: 5000, maxBuffer: 1024 * 1024 },
-			(err, stdout) => {
-				if (err) resolve(null);
-				else resolve(stdout);
-			},
-		);
-	});
-}
-
-async function getGitStatus(cwd: string): Promise<GitStatus | null> {
-	const statusResult = await runGit(cwd, [
-		"status", "--porcelain=2", "--branch", "--no-renames", "-unormal",
-	]);
-	if (!statusResult) return null;
-
-	const lines = statusResult.split("\n");
-
-	let branch = "";
-	let upstream: string | null = null;
-	let aheadBy = 0;
-	let behindBy = 0;
-	let upstreamGone = false;
-	let indexAdded = 0;
-	let indexModified = 0;
-	let indexDeleted = 0;
-	let indexUnmerged = 0;
-	let workingAdded = 0;
-	let workingModified = 0;
-	let workingDeleted = 0;
-	let workingUnmerged = 0;
-
-	for (const line of lines) {
-		if (line.startsWith("# branch.head ")) {
-			branch = line.slice("# branch.head ".length);
-			if (branch === "(detached)") {
-				const sha = await runGit(cwd, ["rev-parse", "--short", "HEAD"]);
-				branch = sha ? `(${sha.trim()})` : "(detached)";
-			}
-		} else if (line.startsWith("# branch.upstream ")) {
-			upstream = line.slice("# branch.upstream ".length);
-		} else if (line.startsWith("# branch.ab ")) {
-			const parts = line.slice("# branch.ab ".length).split(" ");
-			aheadBy = parseInt(parts[0]!, 10) || 0;
-			behindBy = Math.abs(parseInt(parts[1]!, 10)) || 0;
-		} else if (line.startsWith("1 ") || line.startsWith("2 ")) {
-			const x = line.charAt(2);
-			const y = line.charAt(3);
-			if (x === "A") indexAdded++;
-			else if (x === "M") indexModified++;
-			else if (x === "D") indexDeleted++;
-			else if (x === "R" || x === "C") indexModified++;
-			else if (x === "U") indexUnmerged++;
-			if (y === "A" || y === "?") workingAdded++;
-			else if (y === "M") workingModified++;
-			else if (y === "D") workingDeleted++;
-			else if (y === "U") workingUnmerged++;
-		} else if (line.startsWith("? ")) {
-			workingAdded++;
-		} else if (line.startsWith("u ")) {
-			const x = line.charAt(2);
-			const y = line.charAt(3);
-			if (x === "A") indexAdded++;
-			else if (x === "M") indexModified++;
-			else if (x === "D") indexDeleted++;
-			else if (x === "U") indexUnmerged++;
-			if (y === "A") workingAdded++;
-			else if (y === "M") workingModified++;
-			else if (y === "D") workingDeleted++;
-			else if (y === "U") workingUnmerged++;
-		}
-	}
-
-	// Detect upstream gone: upstream is recorded but the ref no longer resolves
-	if (upstream) {
-		const rev = await runGit(cwd, ["rev-parse", "--verify", upstream]);
-		if (!rev) upstreamGone = true;
-	}
-
-	// Stash count (only bother querying if we already have a repo)
-	let stashCount = 0;
-	const stashResult = await runGit(cwd, ["stash", "list"]);
-	if (stashResult?.trim()) stashCount = stashResult.trim().split("\n").length;
-
-	return {
-		branch, upstream, aheadBy, behindBy, upstreamGone,
-		indexAdded, indexModified, indexDeleted, indexUnmerged,
-		workingAdded, workingModified, workingDeleted, workingUnmerged,
-		stashCount,
-	};
-}
+import { getCachedGitStatus, type GitStatus } from "./git.js";
+import { registerNote } from "./note/register.js";
 
 // ── posh-git prompt builder (theme-colored) ──────────────────────────
 
@@ -411,6 +300,9 @@ function createNoBranchFooter(
 // ── extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+	// Note + git context feed into the agent (independent of the footer/TUI).
+	registerNote(pi);
+
 	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	/** Latest ctx captured from any event — used by the periodic poller. */
@@ -419,7 +311,7 @@ export default function (pi: ExtensionAPI) {
 	async function doRefresh(ctx: { cwd: string; hasUI: boolean; ui: any }) {
 		if (!ctx.hasUI) return;
 		try {
-			const status = await getGitStatus(ctx.cwd);
+			const status = await getCachedGitStatus(ctx.cwd);
 			if (!status) {
 				currentGitPrompt = "";
 			} else {

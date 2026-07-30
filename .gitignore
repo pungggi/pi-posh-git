@@ -5,3 +5,7 @@ dist/
 *.js.map
 .DS_Store
 Thumbs.db
+
+# pi per-package runtime caches (config lives in .pi/edgee.json, which is tracked)
+.pi/ghost-autocomplete/
+.pi/remote-pi/

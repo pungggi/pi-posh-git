@@ -1,0 +1,103 @@
+/**
+ * Build the payload injected into the agent context.
+ */
+
+import type { NoteSource } from "./paths.js";
+
+export const CUSTOM_TYPE = "pi-posh-git-note";
+
+export interface NotePayloadInput {
+	body: string;
+	source: NoteSource;
+	path: string;
+	/** Instant the payload was built (ISO-like local offset). */
+	updatedAt: string;
+	/** File mtime ISO, if known. */
+	mtime: string | null;
+	/** Compact git line, or null when disabled / not a repo. */
+	gitLine: string | null;
+}
+
+export interface BuiltPayload {
+	content: string;
+	details: {
+		source: NoteSource;
+		path: string;
+		updatedAt: string;
+		mtime: string | null;
+		hasBody: boolean;
+		hasGit: boolean;
+	};
+	hasContent: boolean;
+}
+
+export function formatTimestamp(date: Date = new Date()): string {
+	const pad = (n: number, w = 2) => String(Math.abs(n)).padStart(w, "0");
+	const y = date.getFullYear();
+	const m = pad(date.getMonth() + 1);
+	const d = pad(date.getDate());
+	const hh = pad(date.getHours());
+	const mm = pad(date.getMinutes());
+	const ss = pad(date.getSeconds());
+	const offsetMin = -date.getTimezoneOffset();
+	const sign = offsetMin >= 0 ? "+" : "-";
+	const oh = pad(Math.floor(Math.abs(offsetMin) / 60));
+	const om = pad(Math.abs(offsetMin) % 60);
+	return `${y}-${m}-${d}T${hh}:${mm}:${ss}${sign}${oh}:${om}`;
+}
+
+export function buildPayload(input: NotePayloadInput): BuiltPayload {
+	const hasBody = input.body.trim().length > 0;
+	const hasGit = Boolean(input.gitLine);
+
+	const header = `[pi-posh-git note · ${input.updatedAt} · ${input.source}]`;
+	const lines: string[] = [header];
+
+	if (hasGit && input.gitLine) {
+		lines.push(input.gitLine);
+	}
+
+	if (hasBody) {
+		if (hasGit) lines.push("");
+		lines.push(input.body.trimEnd());
+	} else if (!hasGit) {
+		lines.push(`(no note — /note set <text> or edit ${input.path})`);
+	}
+
+	return {
+		content: lines.join("\n"),
+		details: {
+			source: input.source,
+			path: input.path,
+			updatedAt: input.updatedAt,
+			mtime: input.mtime,
+			hasBody,
+			hasGit,
+		},
+		hasContent: true,
+	};
+}
+
+/**
+ * Keep only the newest pi-posh-git-note custom message in a message list.
+ *
+ * Matches on `customType` alone — intentionally role-agnostic. The runtime
+ * should tag note messages with `role: "custom"`, but if it ever stores them
+ * with a different/missing role we still want to prune so notes don't
+ * accumulate in context.
+ */
+export function pruneNoteMessages<T extends { role?: string; customType?: string }>(
+	messages: T[],
+): T[] {
+	const isNote = (m: T | undefined): boolean => Boolean(m && m.customType === CUSTOM_TYPE);
+
+	let lastIdx = -1;
+	for (let i = 0; i < messages.length; i++) {
+		if (isNote(messages[i])) {
+			lastIdx = i;
+		}
+	}
+	if (lastIdx < 0) return messages;
+
+	return messages.filter((m, i) => (isNote(m) ? i === lastIdx : true));
+}
