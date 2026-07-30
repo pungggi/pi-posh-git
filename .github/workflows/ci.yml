@@ -20,8 +20,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      # No package-lock.json — install is a no-op (no runtime deps).
-      - run: npm install --package-lock-only --ignore-scripts || true
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
       - name: Verify packed tarball
         run: |
           npm pack --dry-run 2>&1 | tee pack.log
