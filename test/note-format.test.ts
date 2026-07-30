@@ -64,6 +64,34 @@ describe("buildPayload", () => {
 	});
 });
 
+describe("buildPayload signature", () => {
+	const base = {
+		source: "project" as const,
+		path: "/repo/.pi/note.md",
+		mtime: "2026-03-30T18:40:00.000Z",
+		gitLine: "git: main ≡ clean",
+	};
+
+	it("is stable across timestamp changes", () => {
+		const a = buildPayload({ ...base, body: "hi", updatedAt: "2026-03-30T18:42:11+02:00" });
+		const b = buildPayload({ ...base, body: "hi", updatedAt: "2026-03-30T19:00:00+02:00" });
+		expect(a.content).not.toBe(b.content); // header timestamp differs
+		expect(a.signature).toBe(b.signature); // ...but signature is stable
+	});
+
+	it("changes when the body changes", () => {
+		const a = buildPayload({ ...base, body: "hi", updatedAt: "t" });
+		const b = buildPayload({ ...base, body: "hi!", updatedAt: "t" });
+		expect(a.signature).not.toBe(b.signature);
+	});
+
+	it("changes when the git line changes", () => {
+		const a = buildPayload({ ...base, body: "hi", updatedAt: "t", gitLine: "git: main ≡ clean" });
+		const b = buildPayload({ ...base, body: "hi", updatedAt: "t", gitLine: "git: main ↑1 clean" });
+		expect(a.signature).not.toBe(b.signature);
+	});
+});
+
 describe("pruneNoteMessages", () => {
 	it("keeps only the last pi-posh-git-note custom message", () => {
 		const messages = [

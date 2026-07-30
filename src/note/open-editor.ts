@@ -1,5 +1,9 @@
 /**
  * Open the note file in an external editor (fire-and-forget).
+ *
+ * All filesystem setup (parent dir + empty-file creation) runs inside the try
+ * so an unwritable/invalid path returns { ok: false } instead of throwing —
+ * /note edit does not wrap this call in its own try/catch.
  */
 
 import { spawn } from "node:child_process";
@@ -17,15 +21,16 @@ export function openInEditor(
 	filePath: string,
 	env: NodeJS.ProcessEnv = process.env,
 ): OpenEditorResult {
-	ensureParentDir(filePath);
-	if (!fs.existsSync(filePath)) {
-		fs.writeFileSync(filePath, "", "utf8");
-	}
-
 	const configured =
 		env.PI_POSH_GIT_NOTE_EDITOR?.trim() || env.EDITOR?.trim() || env.VISUAL?.trim() || "";
 
 	try {
+		// Filesystem setup — may throw on an unwritable/invalid path.
+		ensureParentDir(filePath);
+		if (!fs.existsSync(filePath)) {
+			fs.writeFileSync(filePath, "", "utf8");
+		}
+
 		if (configured) {
 			const child = spawn(configured, [filePath], {
 				detached: true,

@@ -202,9 +202,12 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 				state.refreshTimer = setTimeout(async () => {
 					state.refreshTimer = null;
 					try {
-						const prev = state.payload?.content;
+						// Compare a timestamp-independent signature — refresh() always
+						// regenerates updatedAt, so comparing content would treat every
+						// noisy fs.watch event as a change.
+						const prevSig = state.payload?.signature ?? "";
 						const payload = await refresh({ reason: "watch" });
-						if (payload.content === prev) return;
+						if (payload.signature === prevSig) return;
 
 						injectViaSend(payload, {
 							triggerTurn: state.settings.triggerTurnOnUpdate,
@@ -398,6 +401,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 				const payload = await refresh({ reason: "clear", cwd: ctx.cwd });
 				state.lastSentContent = null;
 				injectViaSend(payload);
+				startWatcher(ctx);
 				ctx.ui.notify(`[pi-posh-git] note cleared (${target.source})`, "info");
 				break;
 			}
