@@ -61,7 +61,7 @@ interface RuntimeState {
 	watcher: fs.FSWatcher | null;
 	refreshTimer: ReturnType<typeof setTimeout> | null;
 	gitTimer: ReturnType<typeof setTimeout> | null;
-	lastSentContent: string | null;
+	lastSentSignature: string | null;
 }
 
 /**
@@ -104,7 +104,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 		watcher: null,
 		refreshTimer: null,
 		gitTimer: null,
-		lastSentContent: null,
+		lastSentSignature: null,
 	};
 
 	async function refresh(
@@ -142,10 +142,10 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 		payload: BuiltPayload,
 		opts: { triggerTurn?: boolean } = {},
 	): void {
-		if (state.lastSentContent === payload.content && !opts.triggerTurn) {
+		if (state.lastSentSignature === payload.signature && !opts.triggerTurn) {
 			return;
 		}
-		state.lastSentContent = payload.content;
+		state.lastSentSignature = payload.signature;
 
 		if (opts.triggerTurn) {
 			pi.sendMessage(
@@ -284,7 +284,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 			state.gitTimer = null;
 		}
 		state.payload = null;
-		state.lastSentContent = null;
+		state.lastSentSignature = null;
 	});
 
 	pi.on("before_agent_start", async () => {
@@ -356,7 +356,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 				}
 				state.resolved = target;
 				const payload = await refresh({ reason: "set", cwd: ctx.cwd });
-				state.lastSentContent = null;
+				state.lastSentSignature = null;
 				injectViaSend(payload);
 				startWatcher(ctx);
 				ctx.ui.notify(
@@ -382,7 +382,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 				}
 				state.resolved = target;
 				const payload = await refresh({ reason: "append", cwd: ctx.cwd });
-				state.lastSentContent = null;
+				state.lastSentSignature = null;
 				injectViaSend(payload);
 				startWatcher(ctx);
 				ctx.ui.notify(`[pi-posh-git] note appended (${target.source})`, "info");
@@ -399,7 +399,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 				}
 				state.resolved = target;
 				const payload = await refresh({ reason: "clear", cwd: ctx.cwd });
-				state.lastSentContent = null;
+				state.lastSentSignature = null;
 				injectViaSend(payload);
 				startWatcher(ctx);
 				ctx.ui.notify(`[pi-posh-git] note cleared (${target.source})`, "info");
@@ -443,7 +443,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 
 			case "reload": {
 				const payload = await refresh({ reason: "reload", cwd: ctx.cwd });
-				state.lastSentContent = null;
+				state.lastSentSignature = null;
 				injectViaSend(payload);
 				startWatcher(ctx);
 				ctx.ui.notify(`[pi-posh-git] note reloaded · ${payload.details.updatedAt}`, "info");
