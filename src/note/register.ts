@@ -20,6 +20,7 @@ import type {
 import {
 	formatGitLine,
 	getCachedGitStatus,
+	invalidateGitCache,
 } from "../git.js";
 import {
 	buildPayload,
@@ -61,7 +62,7 @@ interface RuntimeState {
 	watcher: fs.FSWatcher | null;
 	refreshTimer: ReturnType<typeof setTimeout> | null;
 	gitTimer: ReturnType<typeof setTimeout> | null;
-	lastSentContent: string | null;
+	lastSentSignature: string | null;
 }
 
 /**
@@ -104,12 +105,10 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 		watcher: null,
 		refreshTimer: null,
 		gitTimer: null,
-		lastSentContent: null,
+		lastSentSignature: null,
 	};
 
-	async function refresh(
-		opts: { reason: string; cwd?: string } = { reason: "manual" },
-	): Promise<BuiltPayload> {
+	async function refresh(opts: { cwd?: string } = {}): Promise<BuiltPayload> {
 		if (opts.cwd) state.cwd = opts.cwd;
 		state.resolved = resolveNotePath(state.cwd);
 
@@ -142,10 +141,10 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 		payload: BuiltPayload,
 		opts: { triggerTurn?: boolean } = {},
 	): void {
-		if (state.lastSentContent === payload.content && !opts.triggerTurn) {
+		if (state.lastSentSignature === payload.signature && !opts.triggerTurn) {
 			return;
 		}
-		state.lastSentContent = payload.content;
+		state.lastSentSignature = payload.signature;
 
 		if (opts.triggerTurn) {
 			pi.sendMessage(
@@ -206,7 +205,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 						// regenerates updatedAt, so comparing content would treat every
 						// noisy fs.watch event as a change.
 						const prevSig = state.payload?.signature ?? "";
-						const payload = await refresh({ reason: "watch" });
+						const payload = await refresh();
 						if (payload.signature === prevSig) return;
 
 						injectViaSend(payload, {
@@ -265,7 +264,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 
 	pi.on("session_start", async (_event, ctx) => {
 		state.cwd = ctx.cwd;
-		const payload = await refresh({ reason: "session_start", cwd: ctx.cwd });
+		const payload = await refresh({ cwd: ctx.cwd });
 		injectViaSend(payload);
 		startWatcher(ctx);
 
@@ -283,8 +282,9 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 			clearTimeout(state.gitTimer);
 			state.gitTimer = null;
 		}
+		invalidateGitCache(); // drop the shared git cache between sessions
 		state.payload = null;
-		state.lastSentContent = null;
+		state.lastSentSignature = null;
 	});
 
 	pi.on("before_agent_start", async () => {
@@ -317,10 +317,14 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 	});
 
 	pi.on("tool_result", async (_event, ctx) => {
+		// A tool may have changed git state; drop the cache so the next read
+		// (footer + note feed share it) is fresh instead of up to TTL-stale.
+		invalidateGitCache(ctx.cwd);
 		scheduleGitRefresh(ctx);
 	});
 
 	pi.on("turn_end", async (_event, ctx) => {
+		invalidateGitCache(ctx.cwd);
 		scheduleGitRefresh(ctx);
 	});
 
@@ -337,7 +341,7 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 			case "show": {
 				// Always refresh from disk — the cached state.payload may be stale if
 				// the watcher missed an update.
-				const payload = await refresh({ reason: "show", cwd: ctx.cwd });
+				const payload = await refresh({ cwd: ctx.cwd });
 				ctx.ui.notify(payload.content, "info");
 				break;
 			}
@@ -355,8 +359,8 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 					break;
 				}
 				state.resolved = target;
-				const payload = await refresh({ reason: "set", cwd: ctx.cwd });
-				state.lastSentContent = null;
+				const payload = await refresh({ cwd: ctx.cwd });
+				state.lastSentSignature = null;
 				injectViaSend(payload);
 				startWatcher(ctx);
 				ctx.ui.notify(
@@ -381,8 +385,8 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 					break;
 				}
 				state.resolved = target;
-				const payload = await refresh({ reason: "append", cwd: ctx.cwd });
-				state.lastSentContent = null;
+				const payload = await refresh({ cwd: ctx.cwd });
+				state.lastSentSignature = null;
 				injectViaSend(payload);
 				startWatcher(ctx);
 				ctx.ui.notify(`[pi-posh-git] note appended (${target.source})`, "info");
@@ -398,8 +402,8 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 					break;
 				}
 				state.resolved = target;
-				const payload = await refresh({ reason: "clear", cwd: ctx.cwd });
-				state.lastSentContent = null;
+				const payload = await refresh({ cwd: ctx.cwd });
+				state.lastSentSignature = null;
 				injectViaSend(payload);
 				startWatcher(ctx);
 				ctx.ui.notify(`[pi-posh-git] note cleared (${target.source})`, "info");
@@ -442,8 +446,8 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 			}
 
 			case "reload": {
-				const payload = await refresh({ reason: "reload", cwd: ctx.cwd });
-				state.lastSentContent = null;
+				const payload = await refresh({ cwd: ctx.cwd });
+				state.lastSentSignature = null;
 				injectViaSend(payload);
 				startWatcher(ctx);
 				ctx.ui.notify(`[pi-posh-git] note reloaded · ${payload.details.updatedAt}`, "info");
@@ -454,11 +458,15 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 				const mode = rest.trim().toLowerCase();
 				if (mode === "on") {
 					state.settings.gitEnabled = true;
-					await refresh({ reason: "git-on", cwd: ctx.cwd });
+					const payload = await refresh({ cwd: ctx.cwd });
+					state.lastSentSignature = null;
+					injectViaSend(payload);
 					ctx.ui.notify("[pi-posh-git] note git block ON", "info");
 				} else if (mode === "off") {
 					state.settings.gitEnabled = false;
-					await refresh({ reason: "git-off", cwd: ctx.cwd });
+					const payload = await refresh({ cwd: ctx.cwd });
+					state.lastSentSignature = null;
+					injectViaSend(payload);
 					ctx.ui.notify("[pi-posh-git] note git block OFF", "info");
 				} else {
 					ctx.ui.notify(
