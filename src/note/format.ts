@@ -21,9 +21,11 @@ export interface NotePayloadInput {
 export interface BuiltPayload {
 	content: string;
 	/**
-	 * Timestamp-independent change key: `${body.trim()}|${gitLine ?? ""}`.
-	 * Use this (not `content`, which always differs via `updatedAt`) to decide
-	 * whether a refresh produced a meaningful change.
+	 * Timestamp-independent change key: `${body.trim()}|${gitLine ?? ""}|${path}`.
+	 * Includes the resolved path so switching repos/targets (same body+git)
+	 * still counts as a change. Use this (not `content`, which always differs
+	 * via `updatedAt`) to decide whether a refresh produced a meaningful
+	 * change.
 	 */
 	signature: string;
 	details: {
@@ -72,7 +74,7 @@ export function buildPayload(input: NotePayloadInput): BuiltPayload {
 
 	return {
 		content: lines.join("\n"),
-		signature: `${input.body.trim()}|${input.gitLine ?? ""}`,
+		signature: `${input.body.trim()}|${input.gitLine ?? ""}|${input.path}`,
 		details: {
 			source: input.source,
 			path: input.path,

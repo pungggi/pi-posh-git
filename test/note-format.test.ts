@@ -90,6 +90,12 @@ describe("buildPayload signature", () => {
 		const b = buildPayload({ ...base, body: "hi", updatedAt: "t", gitLine: "git: main ↑1 clean" });
 		expect(a.signature).not.toBe(b.signature);
 	});
+
+	it("changes when the resolved path changes (switching targets)", () => {
+		const a = buildPayload({ ...base, body: "hi", updatedAt: "t", path: "/repo-a/.pi/note.md" });
+		const b = buildPayload({ ...base, body: "hi", updatedAt: "t", path: "/repo-b/.pi/note.md" });
+		expect(a.signature).not.toBe(b.signature);
+	});
 });
 
 describe("pruneNoteMessages", () => {
