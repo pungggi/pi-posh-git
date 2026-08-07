@@ -71,7 +71,7 @@ The git line mirrors posh-git's symbols (`≡ ↑ ↓ × | ! ~`) so it stays rec
 |-------|--------|
 | Session start | Read note + git → inject (`nextTurn`, no wake) |
 | Note file change | Re-read → inject with new timestamp (silent by default) |
-| Every agent turn | Attach current payload via `before_agent_start` |
+| Every agent turn | Attach current payload via `before_agent_start` (bubble only when note/git/path changed) |
 | After tools / turn end | Refresh git quietly (picked up on next turn) |
 | Context build | Drop all but the newest `pi-posh-git-note` message |
 

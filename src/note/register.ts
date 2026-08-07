@@ -302,11 +302,23 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 		});
 		state.payload = payload;
 
+		// The note must attach to the LLM context every turn, but it should only
+		// render a visible bubble when something actually changed (note body,
+		// git status, or resolved path). `display` gates the bubble; the message
+		// reaches the model either way. We compare the timestamp-independent
+		// signature — shared with injectViaSend — so fs.watch-driven and
+		// turn-driven updates dedup against the same key and the note stops
+		// re-appearing every turn when nothing changed.
+		const changed = state.lastSentSignature !== payload.signature;
+		if (changed) {
+			state.lastSentSignature = payload.signature;
+		}
+
 		return {
 			message: {
 				customType: CUSTOM_TYPE,
 				content: payload.content,
-				display: true,
+				display: changed,
 				details: payload.details,
 			},
 		};
