@@ -264,8 +264,11 @@ export function registerNote(pi: ExtensionAPI): NoteApi {
 
 	pi.on("session_start", async (_event, ctx) => {
 		state.cwd = ctx.cwd;
+		// Prime state (note + git cache) and start the watcher, but do NOT inject
+		// here: before_agent_start re-injects the note on every turn (including
+		// the first), and a sendMessage({ deliverAs: "nextTurn" }) here would be
+		// queued alongside that message and render as a duplicate bubble.
 		const payload = await refresh({ cwd: ctx.cwd });
-		injectViaSend(payload);
 		startWatcher(ctx);
 
 		if (ctx.hasUI) {
