@@ -12,6 +12,7 @@
 
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import type { ReadonlyFooterDataProvider } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { getCachedGitStatus, type GitStatus } from "./git.js";
 import { registerNote } from "./note/register.js";
 
@@ -82,41 +83,6 @@ function buildPrompt(status: GitStatus, th: Theme): string {
 	p.push(th.fg("warning", "]"));
 
 	return p.join("");
-}
-
-// ── minimal string-width helpers (ANSI-aware) ──────────────────────
-
-const SGR_RE = /\x1b\[[0-9;]*m/g;
-
-/** Visible width of a string that may contain SGR escape sequences. */
-function visibleWidth(s: string): number {
-	return s.replace(SGR_RE, "").length;
-}
-
-/**
- * Truncate a possibly-colored string to `maxWidth` visible columns.
- * Appends `ellipsis` ("..." default) if truncated, preserving any trailing SGR.
- */
-function truncateToWidth(s: string, maxWidth: number, ellipsis: string = "..."): string {
-	const bare = s.replace(SGR_RE, "");
-	if (bare.length <= maxWidth) return s;
-	const ellipsisVis = ellipsis.replace(SGR_RE, "").length;
-	const target = Math.max(0, maxWidth - ellipsisVis);
-	// Walk the original string, counting only non-SGR chars
-	let vis = 0;
-	let i = 0;
-	let lastContentIdx = 0;
-	for (; i < s.length; i++) {
-		if (s[i] === "\x1b") {
-			// skip SGR sequence
-			const semi = s.indexOf("m", i);
-			if (semi !== -1) { i = semi; continue; }
-		}
-		if (vis >= target) break;
-		vis++;
-		lastContentIdx = i + 1;
-	}
-	return s.slice(0, lastContentIdx) + ellipsis;
 }
 
 // ── shared state between git refresh and footer render ─────────────
