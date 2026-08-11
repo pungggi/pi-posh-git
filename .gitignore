@@ -12,3 +12,4 @@ Thumbs.db
 
 # local pi settings (machine-specific)
 .pi/settings.json
+.pi/schedule.json
